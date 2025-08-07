@@ -37,6 +37,7 @@ jobs:
         run: |
           sudo snap install aws-cli --classic
           aws --version
+
       - name: Install AWS CLI (Windows)
         if: ${{ startsWith(matrix.os, 'windows') }}
         shell: pwsh
@@ -46,6 +47,8 @@ jobs:
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
+        with:
+          key: "build-${{ matrix.os }}"
 
       - name: Install configure.py dependencies (Windows)
         if: ${{ startsWith(matrix.os, 'windows') }}
