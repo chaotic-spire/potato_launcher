@@ -30,33 +30,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Brew (Linux / macOS)
-        if: ${{ matrix.os != 'windows-2025' }}
+        if: startsWith(matrix.os, 'macos')
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-      - name: Post-Install Brew (Linux)
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+      - name: Install AWS CLI (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
-          echo >> /home/runner/.bashrc
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/runner/.bashrc
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          snap install aws-cli --classic
 
       - name: Install Brew and AWS CLI (Linux / macOS)
-        if: ${{ matrix.os != 'windows-2025' }}
+        if: !(startsWith(matrix.os, 'windows'))
         run: |
           brew update
           brew install awscli
           aws --version
 
       - name: Install AWS CLI (Windows)
-        if: ${{ matrix.os == 'windows-2025' }}
+        if: startsWith(matrix.os, 'windows')
         shell: pwsh
         run: |
           winget install -e --id Amazon.AWSCLI
           aws --version
 
       - name: Export AWS credentials & endpoint (Linux / macOS)
-        if: ${{ matrix.os != 'windows-2025' }}
+        if: !(startsWith(matrix.os, 'windows'))
         run: |
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"     >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
@@ -66,7 +64,7 @@ jobs:
           echo "S3_ENDPOINT=${{ secrets.S3_ENDPOINT }}"                  >> $GITHUB_ENV
 
       - name: Export AWS credentials & endpoint (Windows)
-        if: ${{ matrix.os == 'windows-2025' }}
+        if: startsWith(matrix.os, 'windows')
         shell: pwsh
         run: |
           Add-Content -Path $Env:GITHUB_ENV -Value "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
@@ -81,13 +79,13 @@ jobs:
 
       - name: Install configure.py dependencies
         run: |
-          if [ "${{ matrix.os }}" == "windows-2025" ]; then
+          if [ startsWith(matrix.os, 'windows') ]; then
             # imagemagick is preinstalled
             pip install tomlkit httpx
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          elif [ startsWith(matrix.os, 'ubuntu') ]; then
             sudo apt update
             sudo apt install -y python3 python3-tomlkit python3-httpx imagemagick
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+          elif [ startsWith(matrix.os, 'macos') ]; then
             brew install imagemagick
             pip install tomlkit httpx
           fi
@@ -120,15 +118,15 @@ jobs:
         run: |
           python packaging/configure.py
           mkdir -p build
-          if [ "${{ matrix.os }}" == "windows-2025" ]; then
+          if [ startsWith(matrix.os, 'windows') ]; then
             cargo build --bin launcher --profile release-lto
             mv "target/release-lto/launcher.exe" "build/${LAUNCHER_NAME}.exe"
             echo "$VERSION" > build/version_windows.txt
-          elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          elif [ startsWith(matrix.os, 'ubuntu') ]; then
             cargo build --bin launcher --profile release-lto
             mv "target/release-lto/launcher" "build/${DATA_LAUNCHER_NAME}"
             echo "$VERSION" > build/version_linux.txt
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+          elif [ startsWith(matrix.os, 'macos') ]; then
             which cargo-bundle || cargo install cargo-bundle
             rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
