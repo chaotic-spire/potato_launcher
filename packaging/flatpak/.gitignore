@@ -1,7 +1,0 @@
-*.desktop
-*.flatpakref
-manifest.yml
-
-builddir/
-cargo-sources.json
-flatpak-cargo-generator.py
