@@ -27,23 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Brew (macOS)
+      - name: Install Brew and AWS CLI (macOS)
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          brew update
+          brew install awscli
+          aws --version
 
       - name: Install AWS CLI (Linux)
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           sudo snap install aws-cli --classic
-
-      - name: Install Brew and AWS CLI (Linux / macOS)
-        if: ${{ !startsWith(matrix.os, 'windows') }}
-        run: |
-          brew update
-          brew install awscli
           aws --version
-
       - name: Install AWS CLI (Windows)
         if: ${{ startsWith(matrix.os, 'windows') }}
         shell: pwsh
