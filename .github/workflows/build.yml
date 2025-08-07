@@ -7,10 +7,6 @@ on:
     types:
       - completed
 
-defaults:
-  run:
-    shell: bash
-
 env:
   UPLOAD_TO_SERVER: ${{ github.ref == 'refs/heads/master' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
 
@@ -22,17 +18,53 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
+        os: ['windows-2025', 'ubuntu-latest', 'macos-latest']
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Brew and AWS CLI (Linux / macOS)
+        if: ${{ matrix.os != 'windows-2025' }}
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          brew update
+          brew install awscli
+          aws --version
+
+      - name: Install AWS CLI (Windows)
+        if: ${{ matrix.os == 'windows-2025' }}
+        shell: pwsh
+        run: |
+          winget install -e --id Amazon.AWSCLI
+          aws --version
+
+      - name: Export AWS credentials & endpoint (Linux / macOS)
+        if: ${{ matrix.os != 'windows-2025' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"     >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=${{ secrets.S3_REGION }}"            >> $GITHUB_ENV
+          echo "AWS_ENDPOINT_URL=${{ secrets.S3_ENDPOINT }}"            >> $GITHUB_ENV
+          # Optional: set a canonical env var used later in sync
+          echo "S3_ENDPOINT=${{ secrets.S3_ENDPOINT }}"                  >> $GITHUB_ENV
+
+      - name: Export AWS credentials & endpoint (Windows)
+        if: ${{ matrix.os == 'windows-2025' }}
+        shell: pwsh
+        run: |
+          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
+          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_DEFAULT_REGION=${{ secrets.S3_REGION }}"
+          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_ENDPOINT_URL=${{ secrets.S3_ENDPOINT }}"
+          Add-Content -Path $Env:GITHUB_ENV -Value "S3_ENDPOINT=${{ secrets.S3_ENDPOINT }}"
+
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
       - name: Install configure.py dependencies
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          if [ "${{ matrix.os }}" == "windows-2025" ]; then
             # imagemagick is preinstalled
             pip install tomlkit httpx
           elif [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
@@ -71,7 +103,7 @@ jobs:
         run: |
           python packaging/configure.py
           mkdir -p build
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          if [ "${{ matrix.os }}" == "windows-2025" ]; then
             cargo build --bin launcher --profile release-lto
             mv "target/release-lto/launcher.exe" "build/${LAUNCHER_NAME}.exe"
             echo "$VERSION" > build/version_windows.txt
@@ -138,51 +170,7 @@ jobs:
             echo "$VERSION" > build/version_macos.txt
           fi
 
-      # --- Install & configure AWS CLI per-platform, then sync to S3 ---
-      - name: Install Brew and AWS CLI (Linux / macOS)
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          brew update
-          brew install awscli
-          aws --version
-
-      - name: Install AWS CLI (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
-        run: |
-          winget install -e --id Amazon.AWSCLI
-          aws --version
-
-      - name: Export AWS credentials & endpoint (Linux / macOS)
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: |
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"     >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-          echo "AWS_DEFAULT_REGION=${{ secrets.S3_REGION }}"            >> $GITHUB_ENV
-          echo "AWS_ENDPOINT_URL=${{ secrets.S3_ENDPOINT }}"            >> $GITHUB_ENV
-          # Optional: set a canonical env var used later in sync
-          echo "S3_ENDPOINT=${{ secrets.S3_ENDPOINT }}"                  >> $GITHUB_ENV
-
-      - name: Export AWS credentials & endpoint (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
-        run: |
-          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
-          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_DEFAULT_REGION=${{ secrets.S3_REGION }}"
-          Add-Content -Path $Env:GITHUB_ENV -Value "AWS_ENDPOINT_URL=${{ secrets.S3_ENDPOINT }}"
-          Add-Content -Path $Env:GITHUB_ENV -Value "S3_ENDPOINT=${{ secrets.S3_ENDPOINT }}"
-
-      - name: Sync to S3 (Linux / macOS)
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: |
-          # use the endpoint so CLI talks to your S3-compatible provider
-          aws s3 sync build/ s3://${{ secrets.S3_NAME }} --endpoint-url "${{ secrets.S3_ENDPOINT }}" --region "${{ secrets.S3_REGION }}"
-
-      - name: Sync to S3 (Windows)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
+      - name: Sync to S3
         run: |
           aws s3 sync build/ s3://${{ secrets.S3_NAME }} --endpoint-url "${{ secrets.S3_ENDPOINT }}" --region "${{ secrets.S3_REGION }}"
 
