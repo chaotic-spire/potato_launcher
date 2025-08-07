@@ -6,6 +6,12 @@ on:
     workflows: ['Check']
     types:
       - completed
+  push:
+    paths:
+      - .github/workflows/build.yml
+  pull_request:
+    paths:
+      - .github/workflows/build.yml
 
 env:
   UPLOAD_TO_SERVER: ${{ github.ref == 'refs/heads/master' && secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
@@ -23,10 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Brew and AWS CLI (Linux / macOS)
+      - name: Install Brew (Linux / macOS)
         if: ${{ matrix.os != 'windows-2025' }}
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+      - name: Post-Install Brew (Linux)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          echo >> /home/runner/.bashrc
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/runner/.bashrc
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+      - name: Install Brew and AWS CLI (Linux / macOS)
+        if: ${{ matrix.os != 'windows-2025' }}
+        run: |
           brew update
           brew install awscli
           aws --version

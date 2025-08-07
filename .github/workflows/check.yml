@@ -2,7 +2,11 @@ name: Check
 
 on:
   push:
+    paths-ignore:
+      - .github/workflows/build.yml
   pull_request:
+    paths-ignore:
+      - .github/workflows/build.yml
 
 defaults:
   run:
