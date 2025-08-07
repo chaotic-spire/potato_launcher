@@ -7,9 +7,8 @@ on:
     types:
       - completed
   push:
-    paths:
-      - .github/workflows/build.yml
-  pull_request:
+    branches:
+      - master
     paths:
       - .github/workflows/build.yml
 
@@ -19,7 +18,6 @@ env:
 jobs:
   binaries:
     name: Build binaries
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -37,7 +35,7 @@ jobs:
       - name: Install AWS CLI (Linux)
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
-          snap install aws-cli --classic
+          sudo snap install aws-cli --classic
 
       - name: Install Brew and AWS CLI (Linux / macOS)
         if: ${{ !startsWith(matrix.os, 'windows') }}
@@ -76,38 +74,117 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
 
-      - name: Install configure.py dependencies
+      - name: Install configure.py dependencies (Windows)
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        shell: pwsh
         run: |
-          # Use the expanded matrix value in shell conditionals
-          if [[ "${{ matrix.os }}" == windows* ]]; then
-            # imagemagick is preinstalled
-            pip install tomlkit httpx
-          elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
-            sudo apt update
-            sudo apt install -y python3 python3-tomlkit python3-httpx imagemagick
-          elif [[ "${{ matrix.os }}" == macos* ]]; then
-            brew install imagemagick
-            pip install tomlkit httpx
-          fi
+          # imagemagick is preinstalled
+          pip install tomlkit httpx
 
-      - name: Set environment variables
+      - name: Install configure.py dependencies (Ubuntu)
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt install -y python3 python3-tomlkit python3-httpx imagemagick
+
+      - name: Install configure.py dependencies (macOS)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        shell: bash
+        run: |
+          brew install imagemagick
+          pip install tomlkit httpx
+
+      - name: Set environment variables (Linux / macOS)
+        if: ${{ !startsWith(matrix.os, 'windows') }}
+        shell: bash
         run: |
           # LAUNCHER_NAME, DATA_LAUNCHER_NAME and VERSION are used by CI script
           if [ -n "${{ vars.LAUNCHER_NAME }}" ]; then
-            export LAUNCHER_NAME="${{ vars.LAUNCHER_NAME }}"
+            LAUNCHER_NAME="${{ vars.LAUNCHER_NAME }}"
           else
-            export "$(cat build.env | grep 'LAUNCHER_NAME=')"
-            if [ -z "$LAUNCHER_NAME" ]; then
-              echo "LAUNCHER_NAME not set"
-              exit 1
-            fi
+            # load LAUNCHER_NAME from build.env (must have format LAUNCHER_NAME=...)
+            export "$(grep '^LAUNCHER_NAME=' build.env || true)"
+            # grep export will have already set LAUNCHER_NAME if present
           fi
+
+          if [ -z "$LAUNCHER_NAME" ]; then
+            echo "LAUNCHER_NAME not set"
+            exit 1
+          fi
+
           echo "LAUNCHER_NAME=$LAUNCHER_NAME" >> $GITHUB_ENV
           DATA_LAUNCHER_NAME=$(echo "$LAUNCHER_NAME" | tr '[:upper:]' '[:lower:]' | tr -d "'" | tr ' ' '_')
           echo "DATA_LAUNCHER_NAME=$DATA_LAUNCHER_NAME" >> $GITHUB_ENV
           echo "VERSION=$GITHUB_SHA" >> $GITHUB_ENV
 
-      - name: Build the launcher
+      - name: Set environment variables (Windows)
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        shell: pwsh
+        run: |
+          # LAUNCHER_NAME, DATA_LAUNCHER_NAME and VERSION are used by CI script
+          if ('${{ vars.LAUNCHER_NAME }}' -ne '') {
+            $launcher = '${{ vars.LAUNCHER_NAME }}'
+          } else {
+            # parse build.env for LAUNCHER_NAME=
+            $text = Get-Content -Raw -ErrorAction SilentlyContinue -Path build.env
+            if ($null -eq $text) {
+              Write-Error "build.env not found and LAUNCHER_NAME not set as a repo var"
+              exit 1
+            }
+            if ($text -match '(^|\r?\n)LAUNCHER_NAME=(.*?)(\r?\n|$)') {
+              $launcher = $Matches[2].Trim()
+            } else {
+              Write-Error "LAUNCHER_NAME not found in build.env"
+              exit 1
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($launcher)) {
+            Write-Error "LAUNCHER_NAME not set"
+            exit 1
+          }
+
+          # create DATA_LAUNCHER_NAME: lowercase, remove single quotes, replace spaces with _
+          $data = $launcher.ToLower().Replace("'", "").Replace(" ", "_")
+
+          Add-Content -Path $Env:GITHUB_ENV -Value "LAUNCHER_NAME=$launcher"
+          Add-Content -Path $Env:GITHUB_ENV -Value "DATA_LAUNCHER_NAME=$data"
+          Add-Content -Path $Env:GITHUB_ENV -Value "VERSION=${{ github.sha }}"
+
+      - name: Build the launcher (Windows)
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        shell: pwsh
+        env:
+          VERSION_MANIFEST_URL: ${{ vars.VERSION_MANIFEST_URL }}
+          AUTO_UPDATE_BASE: ${{ vars.AUTO_UPDATE_BASE }}
+          LAUNCHER_APP_ID: ${{ vars.LAUNCHER_APP_ID }}
+          LAUNCHER_ICON: ${{ vars.LAUNCHER_ICON }}
+          LAUNCHER_DESCRIPTION: ${{ vars.LAUNCHER_DESCRIPTION }}
+          LAUNCHER_KEYWORDS: ${{ vars.LAUNCHER_KEYWORDS }}
+        run: |
+          # Ensure build dir exists
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+
+          # configure step
+          python packaging/configure.py
+
+          # Build and move
+          cargo build --bin launcher --profile release-lto
+
+          $exeSrc = "target\release-lto\launcher.exe"
+          $exeDst = "build\$($Env:LAUNCHER_NAME).exe"
+          if (-Not (Test-Path $exeSrc)) {
+            Write-Error "Expected built exe not found: $exeSrc"
+            exit 1
+          }
+          Move-Item -Path $exeSrc -Destination $exeDst -Force
+
+          Set-Content -Path "build\version_windows.txt" -Value $Env:VERSION
+
+      - name: Build the launcher (Ubuntu)
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        shell: bash
         env:
           VERSION_MANIFEST_URL: ${{ vars.VERSION_MANIFEST_URL }}
           AUTO_UPDATE_BASE: ${{ vars.AUTO_UPDATE_BASE }}
@@ -119,74 +196,81 @@ jobs:
           python packaging/configure.py
           mkdir -p build
 
-          if [[ "${{ matrix.os }}" == windows* ]]; then
-            cargo build --bin launcher --profile release-lto
-            mv "target/release-lto/launcher.exe" "build/${LAUNCHER_NAME}.exe"
-            echo "$VERSION" > build/version_windows.txt
+          cargo build --bin launcher --profile release-lto
+          mv "target/release-lto/launcher" "build/${DATA_LAUNCHER_NAME}"
+          echo "$VERSION" > build/version_linux.txt
 
-          elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
-            cargo build --bin launcher --profile release-lto
-            mv "target/release-lto/launcher" "build/${DATA_LAUNCHER_NAME}"
-            echo "$VERSION" > build/version_linux.txt
+      - name: Build the launcher (macOS)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        shell: bash
+        env:
+          VERSION_MANIFEST_URL: ${{ vars.VERSION_MANIFEST_URL }}
+          AUTO_UPDATE_BASE: ${{ vars.AUTO_UPDATE_BASE }}
+          LAUNCHER_APP_ID: ${{ vars.LAUNCHER_APP_ID }}
+          LAUNCHER_ICON: ${{ vars.LAUNCHER_ICON }}
+          LAUNCHER_DESCRIPTION: ${{ vars.LAUNCHER_DESCRIPTION }}
+          LAUNCHER_KEYWORDS: ${{ vars.LAUNCHER_KEYWORDS }}
+        run: |
+          python packaging/configure.py
+          mkdir -p build
 
-          elif [[ "${{ matrix.os }}" == macos* ]]; then
-            which cargo-bundle || cargo install cargo-bundle
-            rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          which cargo-bundle || cargo install cargo-bundle
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
-            # Build Intel binary directly (with older deployment target)
-            export MACOSX_DEPLOYMENT_TARGET=10.12
-            cargo build --bin launcher --profile release-lto --target x86_64-apple-darwin
+          # Build Intel binary directly (with older deployment target)
+          export MACOSX_DEPLOYMENT_TARGET=10.12
+          cargo build --bin launcher --profile release-lto --target x86_64-apple-darwin
 
-            # Build ARM binary as part of bundle (with newer deployment target)
-            export MACOSX_DEPLOYMENT_TARGET=11.0
-            cargo bundle --package launcher --bin launcher --profile release-lto --target aarch64-apple-darwin
+          # Build ARM binary as part of bundle (with newer deployment target)
+          export MACOSX_DEPLOYMENT_TARGET=11.0
+          cargo bundle --package launcher --bin launcher --profile release-lto --target aarch64-apple-darwin
 
-            mkdir -p app
-            mv "target/aarch64-apple-darwin/release-lto/bundle/osx/$LAUNCHER_NAME.app" "app/$LAUNCHER_NAME.app"
+          mkdir -p app
+          mv "target/aarch64-apple-darwin/release-lto/bundle/osx/$LAUNCHER_NAME.app" "app/$LAUNCHER_NAME.app"
 
-            # Update permission descriptions (required for simple voice chat and some other mods)
-            plutil -replace NSCameraUsageDescription \
-              -string "A Minecraft mod wants to access your camera." \
-              "app/$LAUNCHER_NAME.app/Contents/Info.plist"
-            plutil -replace NSMicrophoneUsageDescription \
-              -string "A Minecraft mod wants to access your microphone." \
-              "app/$LAUNCHER_NAME.app/Contents/Info.plist"
-            plutil -insert NSEnableAutomaticCustomizeTouchBarMenuItem \
-              -bool false \
-              "app/$LAUNCHER_NAME.app/Contents/Info.plist"
-            plutil -insert NSFunctionBarAPIEnabled \
-              -bool false \
-              "app/$LAUNCHER_NAME.app/Contents/Info.plist"
+          # Update permission descriptions (required for simple voice chat and some other mods)
+          plutil -replace NSCameraUsageDescription \
+            -string "A Minecraft mod wants to access your camera." \
+            "app/$LAUNCHER_NAME.app/Contents/Info.plist"
+          plutil -replace NSMicrophoneUsageDescription \
+            -string "A Minecraft mod wants to access your microphone." \
+            "app/$LAUNCHER_NAME.app/Contents/Info.plist"
+          plutil -insert NSEnableAutomaticCustomizeTouchBarMenuItem \
+            -bool false \
+            "app/$LAUNCHER_NAME.app/Contents/Info.plist"
+          plutil -insert NSFunctionBarAPIEnabled \
+            -bool false \
+            "app/$LAUNCHER_NAME.app/Contents/Info.plist"
 
-            # Create universal binary
-            lipo -create -output "app/$LAUNCHER_NAME.app/Contents/MacOS/launcher" \
-              "target/x86_64-apple-darwin/release-lto/launcher" \
-              "app/$LAUNCHER_NAME.app/Contents/MacOS/launcher"
+          # Create universal binary
+          lipo -create -output "app/$LAUNCHER_NAME.app/Contents/MacOS/launcher" \
+            "target/x86_64-apple-darwin/release-lto/launcher" \
+            "app/$LAUNCHER_NAME.app/Contents/MacOS/launcher"
 
-            codesign --force --deep --sign - "app/$LAUNCHER_NAME.app"
+          codesign --force --deep --sign - "app/$LAUNCHER_NAME.app"
 
-            ln -s /Applications app/Applications
+          ln -s /Applications app/Applications
 
-            DMG_FILENAME="${LAUNCHER_NAME}.dmg"
+          DMG_FILENAME="${LAUNCHER_NAME}.dmg"
 
-            # CI runner sometimes fails with "hdiutil: create failed - Resource busy", so retry a few times
-            retry=0
-            max_retries=5
-            until [ $retry -ge $max_retries ]
-            do
-              hdiutil create "$DMG_FILENAME" -ov -volname "$LAUNCHER_NAME" -fs HFS+ -srcfolder "app/" && break
-              retry=$((retry+1))
-              echo "Retrying hdiutil create... ($retry/$max_retries)"
-              sleep 5
-            done
+          # CI runner sometimes fails with "hdiutil: create failed - Resource busy", so retry a few times
+          retry=0
+          max_retries=5
+          until [ $retry -ge $max_retries ]
+          do
+            hdiutil create "$DMG_FILENAME" -ov -volname "$LAUNCHER_NAME" -fs HFS+ -srcfolder "app/" && break
+            retry=$((retry+1))
+            echo "Retrying hdiutil create... ($retry/$max_retries)"
+            sleep 5
+          done
 
-            mv "$DMG_FILENAME" build/
+          mv "$DMG_FILENAME" build/
 
-            mv "app/$LAUNCHER_NAME.app" "app/update.app"
-            tar -czvf "build/${DATA_LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
+          mv "app/$LAUNCHER_NAME.app" "app/update.app"
+          tar -czvf "build/${DATA_LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
 
-            echo "$VERSION" > build/version_macos.txt
-          fi
+          echo "$VERSION" > build/version_macos.txt
+
 
       - name: Sync to S3
         run: |
