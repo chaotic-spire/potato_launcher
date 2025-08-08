@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2025, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
 
     env:
       AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
@@ -30,11 +30,17 @@ jobs:
       - name: Install AWS CLI
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo snap install aws-cli --classic
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+            unzip awscliv2.zip
+            sudo ./aws/install
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install awscli
+            curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o AWSCLIV2.pkg
+            sudo installer -pkg AWSCLIV2.pkg -target /
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            winget install --accept-source-agreements --accept-package-agreements -e --id Amazon.AWSCLI
+            powershell -Command '
+              Invoke-WebRequest "https://awscli.amazonaws.com/AWSCLIV2.msi" -OutFile "AWSCLIV2.msi";
+              Start-Process msiexec.exe -Wait -ArgumentList "/i AWSCLIV2.msi /qn";
+            '
           fi
           aws --version
         shell: bash
@@ -140,4 +146,8 @@ jobs:
       # ☁️ Upload to S3
       - name: Upload to S3
         run: |
-          aws s3 sync build/ s3://${{ secrets.S3_NAME }} --endpoint-url ${{ secrets.S3_ENDPOINT }} --region ${{ secrets.S3_REGION }}
+          aws s3 sync build/ \
+            s3://${{ secrets.S3_NAME }} \
+            --endpoint-url ${{ secrets.S3_ENDPOINT }} \
+            --region ${{ secrets.S3_REGION }} \
+            --checksum-mode none
