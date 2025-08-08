@@ -34,10 +34,15 @@ jobs:
           elif [[ "$RUNNER_OS" == "macOS" ]]; then
             brew install awscli
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
-            winget install -e --id Amazon.AWSCLI
+            winget install --accept-source-agreements --accept-package-agreements -e --id Amazon.AWSCLI
           fi
           aws --version
-        shell: bash
+        shell:
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh
+          else
+            bash
+          fi
 
       # 🧰 Install Python deps
       - name: Install configure.py dependencies
