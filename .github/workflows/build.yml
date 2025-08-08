@@ -45,9 +45,16 @@ jobs:
           winget install -e --id Amazon.AWSCLI
           aws --version
 
-      - name: Verify Cloud.ru S3 connection
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.S3_REGION }}
+
+      - name: Verify S3 connection
         run: |
-          echo "Testing connection to Cloud.ru S3..."
+          echo "Testing connection to S3..."
           aws s3 ls --endpoint-url ${{ secrets.S3_ENDPOINT }} || {
             echo "Connection failed. Please check:"
             echo "1. Your CLOUDRU_ACCESS_KEY_ID secret"
@@ -257,13 +264,6 @@ jobs:
           tar -czvf "build/${DATA_LAUNCHER_NAME}_macos.tar.gz" -C app "update.app"
 
           echo "$VERSION" > build/version_macos.txt
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.S3_REGION }}
 
       - name: Sync to S3
         env:
