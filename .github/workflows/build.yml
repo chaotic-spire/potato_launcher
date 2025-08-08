@@ -8,6 +8,7 @@ on:
   push:
     branches: [master]
     paths: [.github/workflows/build.yml]
+    paths-ignore: [README.md]
 
 jobs:
   binaries:
