@@ -56,6 +56,10 @@ jobs:
           aws configure set default.region $AWS_DEFAULT_REGION
           aws configure set default.s3.signature_version s3v4
 
+      - name: Show S3 creds
+        run: |
+          cat ~/.aws/credentials
+
       - name: Verify S3 connection
         run: |
           echo "Testing connection to S3..."
