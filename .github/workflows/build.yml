@@ -149,5 +149,4 @@ jobs:
           aws s3 sync build/ \
             s3://${{ secrets.S3_NAME }} \
             --endpoint-url ${{ secrets.S3_ENDPOINT }} \
-            --region ${{ secrets.S3_REGION }} \
-            --checksum-mode Disabled
+            --region ${{ secrets.S3_REGION }}
