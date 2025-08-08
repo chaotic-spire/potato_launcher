@@ -45,6 +45,17 @@ jobs:
           winget install -e --id Amazon.AWSCLI
           aws --version
 
+      - name: Verify Cloud.ru S3 connection
+        run: |
+          echo "Testing connection to Cloud.ru S3..."
+          aws s3 ls --endpoint-url $AWS_ENDPOINT_URL || {
+            echo "Connection failed. Please check:"
+            echo "1. Your CLOUDRU_ACCESS_KEY_ID secret"
+            echo "2. Your CLOUDRU_SECRET_ACCESS_KEY secret"
+            echo "3. Your S3 service is enabled in Cloud.ru"
+            exit 1
+          }
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
