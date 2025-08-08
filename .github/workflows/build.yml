@@ -48,7 +48,7 @@ jobs:
       - name: Verify Cloud.ru S3 connection
         run: |
           echo "Testing connection to Cloud.ru S3..."
-          aws s3 ls --endpoint-url $AWS_ENDPOINT_URL || {
+          aws s3 ls --endpoint-url $S3_ENDPOINT || {
             echo "Connection failed. Please check:"
             echo "1. Your CLOUDRU_ACCESS_KEY_ID secret"
             echo "2. Your CLOUDRU_SECRET_ACCESS_KEY secret"
