@@ -43,6 +43,9 @@ jobs:
             '
           fi
           aws --version
+          
+          aws configure set default.s3.multipart_threshold 100MB
+          aws configure set default.s3.max_concurrent_requests 1
         shell: bash
 
       # 🧰 Install Python deps
