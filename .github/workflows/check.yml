@@ -3,9 +3,16 @@ name: Check
 on:
   push:
     paths-ignore:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
+      - docs
+      - .github/workflows/build.yml
+      - README.md
+      - packaging/logo.png
   pull_request:
+    paths-ignore:
+      - docs
+      - .github/workflows/build.yml
+      - README.md
+      - packaging/logo.png
 
 defaults:
   run:
@@ -24,7 +31,7 @@ jobs:
 
       - name: Set environment variables
         run: |
-          echo "LAUNCHER_NAME=Potato Launcher" >> $GITHUB_ENV
+          echo "LAUNCHER_NAME=Metro" >> $GITHUB_ENV
           echo "VERSION_MANIFEST_URL=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json" >> $GITHUB_ENV
 
       - name: Cache Rust build
@@ -48,7 +55,7 @@ jobs:
 
       - name: Set environment variables
         run: |
-          echo "LAUNCHER_NAME=Potato Launcher" >> $GITHUB_ENV
+          echo "LAUNCHER_NAME=Metro" >> $GITHUB_ENV
           echo "VERSION_MANIFEST_URL=https://piston-meta.mojang.com/mc/game/version_manifest_v2.json" >> $GITHUB_ENV
 
       - name: Cache Rust build
